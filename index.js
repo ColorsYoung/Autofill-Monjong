@@ -15,7 +15,8 @@ const CONFIG = {
     nid: '1330453153454',
     birth_day: '2',
     birth_month: 'พฤษภาคม',
-    birth_year: '2540'
+    birth_year: '2540',
+    email: 'manasavee@example.com' // <-- เพิ่มอีเมลของคุณตรงนี้
   }
 };
 
@@ -24,11 +25,11 @@ const CONFIG = {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  console.log("🚀 เริ่มต้นบอทไฮสปีด (V.Turbo-Fix)...");
+  console.log("🚀 เริ่มต้นบอทไฮสปีด (V.Turbo-Final-Email)...");
   await page.goto(CONFIG.TARGET_URL);
 
   try {
-    // 1-3: ผ่านหน้าเงื่อนไข
+    // 1-3: ผ่านหน้าเงื่อนไขและการเลือกวันที่
     await page.waitForSelector('input[type="checkbox"]');
     await page.check('input[type="checkbox"]');
     await page.click('button:has-text("ถัดไป")');
@@ -44,36 +45,27 @@ const CONFIG = {
 
     try { await page.locator('button:has-text("ยอมรับ"), button:has-text("ตกลง")').last().click({ timeout: 1000 }); } catch (e) { }
 
-    // --- สเต็ป 4: แก้ปัญหาหน้าเด้งและกรอกข้อมูลทันที ---
+    // --- สเต็ป 4: วาร์ปกรอกข้อมูลส่วนตัว ---
     console.log("⚡️ วาร์ปไปที่ฟอร์มและกรอกข้อมูล...");
-
-    // บังคับหน้าจอให้หยุดอยู่ที่ฟอร์มทันที (ใช้ Selector มาตรฐาน CSS)
     await page.evaluate(() => {
-      // ค้นหา Element จากชื่อคลาสที่ระบุในรูปภาพ
-      const formElement = document.querySelector('.lg\\:col-span-2') || document.querySelector('input[id="ชื่อ"]');
-      if (formElement) formElement.scrollIntoView({ behavior: 'instant', block: 'start' });
+      const el = document.querySelector('.lg\\:col-span-2') || document.querySelector('input[id="ชื่อ"]');
+      if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' });
     });
 
-    // เลือกคำนำหน้า (JS Click)
     const prefixBox = page.locator('div.border-2.cursor-pointer').first();
     await page.evaluate((el) => el.click(), await prefixBox.elementHandle());
     await page.locator(`div:text-is("${CONFIG.PAYLOAD.prefix}")`).last().click({ force: true });
 
-    // กรอกข้อมูลหลัก
     await page.fill('input[id="ชื่อ"]', CONFIG.PAYLOAD.first_name);
     await page.fill('input[id="นามสกุล"]', CONFIG.PAYLOAD.last_name);
     await page.fill('input[id="เลขบัตรประชาชน"]', CONFIG.PAYLOAD.nid);
     await page.fill('input[id="เบอร์โทรศัพท์"]', CONFIG.PAYLOAD.tel);
 
-    // 📅 จัดการปฏิทินวันเกิด
-    console.log("📅 จัดการปฏิทินด้วยความเร็วสูง...");
+    // 📅 จัดการปฏิทิน
     const birthInput = page.locator('div:has-text("วันเกิด (ปี พ.ศ.)") + div').first();
     await page.evaluate((el) => el.click(), await birthInput.elementHandle());
-
     const activeCalendar = page.locator('.react-calendar:visible');
     const navLabel = activeCalendar.locator('.react-calendar__navigation__label');
-
-    // เข้าโหมดทศวรรษ (JS Click)
     await page.evaluate((el) => el.click(), await navLabel.elementHandle());
     await page.evaluate((el) => el.click(), await navLabel.elementHandle());
 
@@ -81,62 +73,63 @@ const CONFIG = {
     for (let i = 0; i < 50; i++) {
       const yearButtons = activeCalendar.locator('.react-calendar__decade-view__years__year');
       const yearsOnScreen = await yearButtons.allInnerTexts();
-
       const foundIndex = yearsOnScreen.findIndex(y => y.includes(CONFIG.PAYLOAD.birth_year));
-
       if (foundIndex !== -1) {
-        console.log(`✨ เจอปี ${CONFIG.PAYLOAD.birth_year} แล้ว!`);
         await page.evaluate((el) => el.click(), await yearButtons.nth(foundIndex).elementHandle());
         yearFound = true;
         break;
       } else {
-        // ถอยหลังทันที (ลด Timeout เหลือ 150ms เพื่อความไวสูงสุด)
-        const prevBtn = activeCalendar.locator('.react-calendar__navigation__prev-button');
-        await page.evaluate((el) => el.click(), await prevBtn.elementHandle());
+        await page.evaluate((el) => el.click(), await activeCalendar.locator('.react-calendar__navigation__prev-button').elementHandle());
         await page.waitForTimeout(150);
       }
     }
 
     if (yearFound) {
       const monthTarget = CONFIG.PAYLOAD.birth_month.substring(0, 3);
-      const monthBtn = activeCalendar.locator('.react-calendar__year-view__months__month').filter({ hasText: new RegExp(monthTarget) }).first();
-      await page.evaluate((el) => el.click(), await monthBtn.elementHandle());
+      await page.evaluate((el) => el.click(), await activeCalendar.locator('.react-calendar__year-view__months__month').filter({ hasText: new RegExp(monthTarget) }).first().elementHandle());
       await page.waitForTimeout(150);
-
-      const dayBtn = activeCalendar.locator('.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)').filter({ hasText: new RegExp(`^${CONFIG.PAYLOAD.birth_day}$`) }).first();
-      await page.evaluate((el) => el.click(), await dayBtn.elementHandle());
+      await page.evaluate((el) => el.click(), await activeCalendar.locator('.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)').filter({ hasText: new RegExp(`^${CONFIG.PAYLOAD.birth_day}$`) }).first().elementHandle());
     }
 
-    console.log("✅ กรอกข้อมูลสำเร็จ!");
-
-    // อัปโหลดและกดตรวจสอบ
     await page.setInputFiles('input[type="file"]', CONFIG.IMAGE_PATH);
     await page.waitForTimeout(500);
     await page.locator('button:has-text("ตรวจสอบ")').click();
-    console.log("🚀 บอททำงานเสร็จสิ้น!");
 
-    // --- สเต็ปต่อเนื่อง: กดยืนยันและไปหน้าถัดไป ---
-    console.log("➡️ กำลังดำเนินการขั้นตอนถัดไป...");
+    // ➡️ กดถัดไป รอบที่ 1
+    const nextBtn1 = page.locator('button:has-text("ถัดไป"):visible').last();
+    await nextBtn1.waitFor({ state: 'visible', timeout: 5000 });
+    await page.evaluate((el) => el.click(), await nextBtn1.elementHandle());
 
-    // 1. ตรวจสอบว่าปุ่ม "ถัดไป" (ปุ่มสีเทา/ฟ้าด้านล่าง) พร้อมใช้งานหรือยัง
-    const finalNextBtn = page.locator('button:has-text("ถัดไป"):visible').last();
+    // ➡️ กดถัดไป รอบที่ 2 (หน้าเลือกบริการ)
+    const nextBtn2 = page.locator('button:has-text("ถัดไป"):visible').last();
+    await nextBtn2.waitFor({ state: 'visible', timeout: 5000 });
+    await page.evaluate((el) => el.click(), await nextBtn2.elementHandle());
 
-    // รอให้ปุ่ม "ถัดไป" เลิก Disable (หลังจากกดตรวจสอบสำเร็จ)
-    await finalNextBtn.waitFor({ state: 'visible', timeout: 5000 });
-    await page.evaluate((el) => el.click(), await finalNextBtn.elementHandle());
-    console.log("✅ ผ่านหน้ากรอกข้อมูลผู้ลงทะเบียนเรียบร้อย");
+    // --- สเต็ปสุดท้าย: กรอกอีเมล และ ติ๊กเงื่อนไข ---
+    console.log("🤖 หน้าสรุป: กำลังกรอกอีเมลและติ๊กเงื่อนไข...");
 
-    // --- สเต็ป 5: หน้าเลือกบริการ ---
-    console.log("5️⃣ กำลังจัดการหน้าเลือกบริการ...");
-    // รอให้หน้าโหลดและหาปุ่ม "ถัดไป" ของหน้าเลือกบริการ
-    await page.waitForSelector('button:has-text("ถัดไป")', { state: 'visible' });
-    await page.click('button:has-text("ถัดไป")');
+    // 1. กรอกอีเมล
+    const emailInput = page.locator('input[placeholder="กรอกอีเมล"]');
+    await emailInput.waitFor({ state: 'visible' });
+    await emailInput.fill(CONFIG.PAYLOAD.email);
 
-    // --- สเต็ป 6: หน้าสรุปและ CAPTCHA ---
-    console.log("🤖 ถึงหน้าสุดท้ายแล้ว! กรุณาตรวจสอบข้อมูลและแก้ CAPTCHA");
+    // 2. ติ๊กถูกยอมรับเงื่อนไข (แก้ปัญหา Clicking did not change state)
+    const conditionCheck = page.locator('#flexCheckDefault6');
+    await page.evaluate((el) => {
+      if (!el.checked) el.click(); // สั่งคลิกโดยตรงผ่าน Browser
+    }, await conditionCheck.elementHandle());
 
-    // เลื่อนลงไปล่างสุดเพื่อให้เห็นปุ่มกดยืนยันการจอง
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    // 3. วาร์ปไปที่ CAPTCHA
+    await page.evaluate(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' });
+    });
+
+    console.log("✅ พร้อมแล้ว! กรุณาแก้ CAPTCHA ด้วยตนเอง");
+
+    // แจ้งเตือนเพื่อให้คุณรู้ตัวทันที
+    await page.evaluate(() => {
+      alert("บอทกรอกอีเมลและติ๊กเงื่อนไขให้แล้ว! แก้ CAPTCHA แล้วกดยืนยันได้เลย!");
+    });
 
   } catch (e) {
     console.error("❌ หลุดการทำงาน:", e.message);
