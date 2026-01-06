@@ -7,6 +7,10 @@ chromium.use(stealth());
 const CONFIG = {
   TARGET_URL: 'https://wildlifesanctuaryfca16.com/omkoi/reservation',
   IMAGE_PATH: path.join(__dirname, 'id_card.jpg'),
+
+  TARGET_MONTH: 2, // 1 = มกราคม, 2 = กุมภาพันธ์, 3 = มีนาคม ...
+  TARGET_DATE: 12, // วันที่ที่ต้องการจอง
+
   PAYLOAD: {
     prefix: 'นาย',
     first_name: 'มนัสวี',
@@ -25,11 +29,11 @@ const CONFIG = {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  console.log("🚀 เริ่มต้นบอทไฮสปีด (V.Sniper-Final)...");
+  console.log(`🚀 เริ่มบอท (เป้าหมาย: วันที่ ${CONFIG.TARGET_DATE} เดือนที่ ${CONFIG.TARGET_MONTH})`);
   await page.goto(CONFIG.TARGET_URL);
 
   try {
-    // --- สเต็ป 1-2: ผ่านหน้าเงื่อนไข (Instant JS) ---
+    // --- สเต็ป 1-2: ผ่านหน้าเงื่อนไข ---
     await page.waitForSelector('input[type="checkbox"]');
     await page.evaluate(() => {
       const c1 = document.querySelector('input[type="checkbox"]');
@@ -44,27 +48,41 @@ const CONFIG = {
       if (c2) c2.click(); if (b2) b2.click();
     });
 
-    // --- สเต็ป 3: เลือกวันที่ (จุดที่ชอบติด) ---
-    console.log("📅 กำลังจิ้มวันที่ 12 และกดถัดไป...");
+    // --- สเต็ป 3: เลือกวันที่ (ระบบคำนวณเดือนอัตโนมัติ) ---
     await page.waitForSelector('#flexCheckDefault3');
     await page.click('#flexCheckDefault3');
 
-    const date12 = page.locator('.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)').filter({ hasText: /^12$/ }).first();
+    // คำนวณการกดเปลี่ยนเดือน
+    const currentMonth = new Date().getMonth() + 1; // มกรา = 1
+    const diff = CONFIG.TARGET_MONTH - currentMonth;
 
-    // บังคับจิ้มวันที่ด้วย JS และส่งสัญญาณให้ระบบรับรู้
+    if (diff > 0) {
+      console.log(`➡️ กำลังเลื่อนเดือนไปอีก ${diff} ครั้ง...`);
+      for (let i = 0; i < diff; i++) {
+        await page.click('.react-calendar__navigation__next-button');
+        await page.waitForTimeout(300);
+      }
+    } else if (diff < 0) {
+      console.log(`⬅️ กำลังถอยเดือนกลับไป ${Math.abs(diff)} ครั้ง...`);
+      for (let i = 0; i < Math.abs(diff); i++) {
+        await page.click('.react-calendar__navigation__prev-button');
+        await page.waitForTimeout(300);
+      }
+    }
+
+    console.log(`📅 จิ้มวันที่ ${CONFIG.TARGET_DATE}...`);
+    const dateSelector = `.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)`;
+    const targetDateBtn = page.locator(dateSelector).filter({ hasText: new RegExp(`^${CONFIG.TARGET_DATE}$`) }).first();
+
     await page.evaluate((el) => {
       el.click();
       el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, await date12.elementHandle());
+    }, await targetDateBtn.elementHandle());
 
-    // รอเสี้ยววินาทีให้ปุ่ม "ถัดไป" หาย Disabled
     await page.waitForTimeout(500);
-
-    // กดปุ่มถัดไป (ใช้รัวๆ จนกว่าจะผ่าน)
     const nextBtn3 = page.locator('button:has-text("ถัดไป"):visible').last();
     await page.evaluate((el) => el.click(), await nextBtn3.elementHandle());
 
-    // ดัก Pop-up ยอมรับที่มักจะเด้งหลังกดถัดไป
     try {
       const confirmPop = page.locator('button:has-text("ยอมรับ"), button:has-text("ตกลง")').last();
       await confirmPop.waitFor({ state: 'visible', timeout: 1500 });
@@ -75,7 +93,6 @@ const CONFIG = {
     console.log("⚡️ กรอกข้อมูลส่วนตัว...");
     await page.waitForSelector('input[id="ชื่อ"]', { state: 'attached' });
 
-    // เลือกคำนำหน้า (Force Click แก้ปัญหา Element is not visible)
     const prefixBox = page.locator('div.border-2.cursor-pointer').first();
     await page.evaluate((el) => el.click(), await prefixBox.elementHandle());
     await page.waitForTimeout(250);
@@ -87,12 +104,11 @@ const CONFIG = {
     await page.fill('input[id="เลขบัตรประชาชน"]', CONFIG.PAYLOAD.nid);
     await page.fill('input[id="เบอร์โทรศัพท์"]', CONFIG.PAYLOAD.tel);
 
-    // 📅 จัดการปฏิทินวันเกิด
+    // 📅 ปฏิทินวันเกิด
     const birthInput = page.locator('div:has-text("วันเกิด (ปี พ.ศ.)") + div').first();
     await page.evaluate((el) => el.click(), await birthInput.elementHandle());
     const activeCalendar = page.locator('.react-calendar:visible');
     const navLabel = activeCalendar.locator('.react-calendar__navigation__label');
-
     await page.evaluate((el) => el.click(), await navLabel.elementHandle());
     await page.waitForTimeout(400);
     await page.evaluate((el) => el.click(), await navLabel.elementHandle());
@@ -103,7 +119,6 @@ const CONFIG = {
       const yearButtons = activeCalendar.locator('.react-calendar__decade-view__years__year');
       const yearsOnScreen = await yearButtons.allInnerTexts();
       const foundIndex = yearsOnScreen.findIndex(y => y.includes(CONFIG.PAYLOAD.birth_year));
-
       if (foundIndex !== -1) {
         await page.evaluate((el) => el.click(), await yearButtons.nth(foundIndex).elementHandle());
         yearFound = true;
@@ -129,7 +144,6 @@ const CONFIG = {
     await page.waitForTimeout(600);
     await page.locator('button:has-text("ตรวจสอบ")').click();
 
-    // กดถัดไป 2 รอบ
     for (let i = 1; i <= 2; i++) {
       const btn = page.locator('button:has-text("ถัดไป"):visible').last();
       await btn.waitFor({ state: 'visible' });
@@ -138,12 +152,9 @@ const CONFIG = {
     }
 
     // --- หน้าสุดท้าย ---
-    console.log("🤖 หน้าสรุป: กรอกอีเมล ติ๊กเงื่อนไข และวาร์ปลงล่าง...");
     await page.fill('input[placeholder="กรอกอีเมล"]', CONFIG.PAYLOAD.email);
     const conditionCheck = page.locator('#flexCheckDefault6');
     await page.evaluate((el) => { if (el && !el.checked) el.click(); }, await conditionCheck.elementHandle());
-
-    // วาร์ปลงล่างสุดแบบ Instant
     await page.evaluate(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' }); });
 
     console.log("✅ จบภารกิจ! แก้ CAPTCHA แล้วกดยืนยันเลย!");
