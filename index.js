@@ -8,8 +8,8 @@ const CONFIG = {
   TARGET_URL: 'https://wildlifesanctuaryfca16.com/omkoi/reservation',
   IMAGE_PATH: path.join(__dirname, 'id_card.jpg'),
 
-  TARGET_MONTH: 2, // 1 = มกราคม, 2 = กุมภาพันธ์, 3 = มีนาคม ...
-  TARGET_DATE: 12, // วันที่ที่ต้องการจอง
+  TARGET_MONTH: 1, // 1 = มกราคม, 2 = กุมภาพันธ์, 3 = มีนาคม ...
+  TARGET_DATE: 13, // วันที่ที่ต้องการจอง
 
   PAYLOAD: {
     prefix: 'นาย',
@@ -48,46 +48,62 @@ const CONFIG = {
       if (c2) c2.click(); if (b2) b2.click();
     });
 
-    // --- สเต็ป 3: เลือกวันที่ (ระบบคำนวณเดือนอัตโนมัติ) ---
+    // --- สเต็ป 3: เลือกวันที่ (Turbo Speed Edition) ---
     await page.waitForSelector('#flexCheckDefault3');
-    await page.click('#flexCheckDefault3');
+    // ติ๊กยินยอมและรอปฏิทินเรนเดอร์ทันที
+    await page.evaluate(() => {
+      document.querySelector('#flexCheckDefault3').click();
+    });
 
-    // คำนวณการกดเปลี่ยนเดือน
-    const currentMonth = new Date().getMonth() + 1; // มกรา = 1
-    const diff = CONFIG.TARGET_MONTH - currentMonth;
+    // รอให้ปฏิทินปรากฏ (ใช้ Selector ที่เจาะจงเพื่อให้เร็วขึ้น)
+    await page.waitForSelector('.react-calendar__viewContainer', { state: 'visible' });
 
-    if (diff > 0) {
-      console.log(`➡️ กำลังเลื่อนเดือนไปอีก ${diff} ครั้ง...`);
-      for (let i = 0; i < diff; i++) {
-        await page.click('.react-calendar__navigation__next-button');
-        await page.waitForTimeout(300);
+    // ใช้ evaluate เพื่อจัดการเปลี่ยนเดือนและจิ้มวันที่ในรวดเดียว (ลดการส่งคำสั่งข้ามไปมา)
+    await page.evaluate(async (config) => {
+      const currentMonth = new Date().getMonth() + 1;
+      const diff = config.TARGET_MONTH - currentMonth;
+
+      // 1. เปลี่ยนเดือน
+      if (diff > 0) {
+        const nextBtn = document.querySelector('.react-calendar__navigation__next-button');
+        for (let i = 0; i < diff; i++) {
+          nextBtn.click();
+          // รอ Animation เปลี่ยนเดือนสั้นๆ (150ms พอสำหรับระบบส่วนใหญ่)
+          await new Promise(r => setTimeout(r, 150));
+        }
+      } else if (diff < 0) {
+        const prevBtn = document.querySelector('.react-calendar__navigation__prev-button');
+        for (let i = 0; i < Math.abs(diff); i++) {
+          prevBtn.click();
+          await new Promise(r => setTimeout(r, 150));
+        }
       }
-    } else if (diff < 0) {
-      console.log(`⬅️ กำลังถอยเดือนกลับไป ${Math.abs(diff)} ครั้ง...`);
-      for (let i = 0; i < Math.abs(diff); i++) {
-        await page.click('.react-calendar__navigation__prev-button');
-        await page.waitForTimeout(300);
+
+      // 2. ค้นหาและจิ้มวันที่เป้าหมายทันที
+      const days = Array.from(document.querySelectorAll('.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)'));
+      const target = days.find(d => d.innerText.trim() === String(config.TARGET_DATE));
+
+      if (target) {
+        target.click();
+        target.dispatchEvent(new Event('change', { bubbles: true }));
       }
-    }
+    }, { TARGET_MONTH: CONFIG.TARGET_MONTH, TARGET_DATE: CONFIG.TARGET_DATE });
 
-    console.log(`📅 จิ้มวันที่ ${CONFIG.TARGET_DATE}...`);
-    const dateSelector = `.react-calendar__month-view__days__day:not(.react-calendar__month-view__days__day--neighboringMonth)`;
-    const targetDateBtn = page.locator(dateSelector).filter({ hasText: new RegExp(`^${CONFIG.TARGET_DATE}$`) }).first();
+    // ลดเวลารอก่อนกดถัดไปเหลือ 250ms (จากเดิม 500ms) เพื่อให้ระบบ React ประมวลผลสถานะปุ่มทัน
+    await page.waitForTimeout(250);
 
-    await page.evaluate((el) => {
-      el.click();
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, await targetDateBtn.elementHandle());
-
-    await page.waitForTimeout(500);
+    // กดปุ่มถัดไปและจัดการ Pop-up ทันที
     const nextBtn3 = page.locator('button:has-text("ถัดไป"):visible').last();
     await page.evaluate((el) => el.click(), await nextBtn3.elementHandle());
 
     try {
+      // ลดเวลารอ Pop-up ยืนยันเหลือ 800ms
       const confirmPop = page.locator('button:has-text("ยอมรับ"), button:has-text("ตกลง")').last();
-      await confirmPop.waitFor({ state: 'visible', timeout: 1500 });
+      await confirmPop.waitFor({ state: 'visible', timeout: 800 });
       await page.evaluate((el) => el.click(), await confirmPop.elementHandle());
     } catch (e) { }
+
+    console.log(`✅ จิ้มวันที่ ${CONFIG.TARGET_DATE} เรียบร้อย (Speed Optimized)`);
 
     // --- สเต็ป 4: ข้อมูลส่วนตัว ---
     console.log("⚡️ กรอกข้อมูลส่วนตัว...");
